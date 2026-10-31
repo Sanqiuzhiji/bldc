@@ -17,6 +17,7 @@ workspace.code-workspace
 *.pro.shared
 
 .vscode
+.idea
 
 .cache
 compile_commands.json
