@@ -28,6 +28,7 @@
 #include "enc_ad2s1205.h"
 #include "enc_as5x47u.h"
 #include "enc_as504x.h"
+#include "enc_as5600.h"
 #include "enc_bissc.h"
 #include "enc_mt6816.h"
 #include "enc_mt6835.h"

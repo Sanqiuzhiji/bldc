@@ -301,10 +301,28 @@ bool encoder_init(volatile mc_configuration *conf) {
 		res = true;
 	} break;
 
-	case SENSOR_PORT_MODE_CUSTOM_ENCODER:
+	case SENSOR_PORT_MODE_CUSTOM_ENCODER: {
+		app_configuration *appconf = mempools_alloc_appconf();
+		conf_general_read_app_configuration(appconf);
+		if (appconf->app_to_use == APP_UART ||
+				appconf->app_to_use == APP_PPM_UART ||
+				appconf->app_to_use == APP_ADC_UART) {
+			appconf->app_to_use = APP_NONE;
+			app_set_configuration(appconf);
+			conf_general_store_app_configuration(appconf);
+		}
+		mempools_free_appconf(appconf);
+
+		if (!enc_as5600_init()) {
+			m_encoder_type_now = ENCODER_TYPE_NONE;
+			return false;
+		}
+
+		encoder_set_custom_callbacks(enc_as5600_read_deg,
+				enc_as5600_has_fault, enc_as5600_print_info);
 		m_encoder_type_now = ENCODER_TYPE_CUSTOM;
 		res = true;
-		break;
+	} break;
 
 	case SENSOR_PORT_MODE_PWM: {
 		if (!enc_pwm_init(false)) {
@@ -444,6 +462,9 @@ void encoder_deinit(void) {
 		enc_ma782_deinit(&encoder_cfg_ma782);
 	} else if (m_encoder_type_now == ENCODER_TYPE_AMT22) {
 		enc_amt22_deinit(&encoder_cfg_amt22);
+	} else if (m_encoder_type_now == ENCODER_TYPE_CUSTOM) {
+		enc_as5600_deinit();
+		encoder_set_custom_callbacks(NULL, NULL, NULL);
 	}
 
 	m_encoder_type_now = ENCODER_TYPE_NONE;

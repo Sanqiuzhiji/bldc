@@ -4,6 +4,7 @@ ENCSRC =	encoder/encoder.c \
 			encoder/enc_ad2s1205.c \
 			encoder/enc_as5x47u.c \
 			encoder/enc_as504x.c \
+			encoder/enc_as5600.c \
 			encoder/enc_bissc.c \
 			encoder/enc_mt6816.c \
 			encoder/enc_mt6835.c \

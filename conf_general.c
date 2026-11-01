@@ -1328,7 +1328,7 @@ __attribute__((section(".text2"))) int conf_general_measure_flux_linkage_openloo
  * Send motor configuration if the detection succeeds.
  *
  * @result
- * 2: AS5147 detected successfully
+ * 2: Encoder detected successfully
  * 1: Hall sensors detected successfully
  * 0: No sensors detected and sensorless mode applied successfully
  * -1: Detection failed
@@ -1410,8 +1410,77 @@ __attribute__((section(".text2"))) int conf_general_autodetect_apply_sensors_foc
 		*result = 1;
 	}
 
-	// AS5047 encoder
+	// Custom encoder
 #ifndef HW_HAS_DUAL_MOTORS
+	if (!res) {
+		mcconf->m_sensor_port_mode = SENSOR_PORT_MODE_CUSTOM_ENCODER;
+		mc_interface_set_configuration(mcconf);
+
+		if (encoder_is_configured()) {
+			for (int i = 0;i < 1000;i++) {
+				mc_interface_lock_override_once();
+				mc_interface_set_openloop_phase((float)i * current / 1000.0, 0.0);
+				fault = mc_interface_get_fault();
+				if (fault != FAULT_CODE_NONE) {
+					timeout_configure(tout, tout_c, tout_ksw);
+					mc_interface_unlock();
+					mc_interface_release_motor();
+					mc_interface_wait_for_motor_release(1.0);
+					mc_interface_set_configuration(mcconf_old);
+					mempools_free_mcconf(mcconf);
+					mempools_free_mcconf(mcconf_old);
+					return fault;
+				}
+				chThdSleepMilliseconds(1);
+			}
+
+			float phase_start = encoder_read_deg();
+			float phase_mid = 0.0;
+			float phase_end = 0.0;
+
+			for (int i = 0;i < 180.0;i++) {
+				mc_interface_lock_override_once();
+				mc_interface_set_openloop_phase(current, i);
+				fault = mc_interface_get_fault();
+				if (fault != FAULT_CODE_NONE) {
+					timeout_configure(tout, tout_c, tout_ksw);
+					mc_interface_unlock();
+					mc_interface_release_motor();
+					mc_interface_wait_for_motor_release(1.0);
+					mc_interface_set_configuration(mcconf_old);
+					mempools_free_mcconf(mcconf);
+					mempools_free_mcconf(mcconf_old);
+					return fault;
+				}
+
+				chThdSleepMilliseconds(5);
+
+				if (i == 90) {
+					phase_mid = encoder_read_deg();
+				}
+			}
+
+			phase_end = encoder_read_deg();
+			float diff = fabsf(utils_angle_difference(phase_start, phase_end));
+			float diff_mid = fabsf(utils_angle_difference(phase_mid, phase_end));
+
+			if (diff > 2.0 && (diff_mid - diff / 2.0) < (diff / 4)) {
+				float offset, ratio;
+				bool inverted;
+				mcpwm_foc_encoder_detect(current, false, &offset, &ratio, &inverted);
+				mcconf_old->m_sensor_port_mode = SENSOR_PORT_MODE_CUSTOM_ENCODER;
+				mcconf_old->foc_sensor_mode = FOC_SENSOR_MODE_ENCODER;
+				mcconf_old->foc_encoder_offset = offset;
+				mcconf_old->foc_encoder_ratio = ratio;
+				mcconf_old->foc_encoder_inverted = inverted;
+
+				res = true;
+				*result = 2;
+			}
+		}
+	}
+
+	// AS5047 encoder
 	if (!res) {
 		mcconf->m_sensor_port_mode = SENSOR_PORT_MODE_AS5047_SPI;
 		mc_interface_set_configuration(mcconf);
