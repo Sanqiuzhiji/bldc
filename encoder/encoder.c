@@ -302,6 +302,8 @@ bool encoder_init(volatile mc_configuration *conf) {
 	} break;
 
 	case SENSOR_PORT_MODE_CUSTOM_ENCODER: {
+		// AS5600与UART通信口复用I2C管脚。进入该模式前关闭会占用这些管脚的
+		// UART组合应用，并保存更新后的应用配置。
 		app_configuration *appconf = mempools_alloc_appconf();
 		conf_general_read_app_configuration(appconf);
 		if (appconf->app_to_use == APP_UART ||
@@ -313,11 +315,14 @@ bool encoder_init(volatile mc_configuration *conf) {
 		}
 		mempools_free_appconf(appconf);
 
+		// 初始化AS5600并启动其后台采样线程。首次角度或状态读取失败时，
+		// 不把该传感器注册为当前编码器。
 		if (!enc_as5600_init()) {
 			m_encoder_type_now = ENCODER_TYPE_NONE;
 			return false;
 		}
 
+		// 复用现有Custom Encoder抽象，将角度、故障和诊断接口转发给AS5600驱动。
 		encoder_set_custom_callbacks(enc_as5600_read_deg,
 				enc_as5600_has_fault, enc_as5600_print_info);
 		m_encoder_type_now = ENCODER_TYPE_CUSTOM;
@@ -463,6 +468,8 @@ void encoder_deinit(void) {
 	} else if (m_encoder_type_now == ENCODER_TYPE_AMT22) {
 		enc_amt22_deinit(&encoder_cfg_amt22);
 	} else if (m_encoder_type_now == ENCODER_TYPE_CUSTOM) {
+		// 离开AS5600模式时先停止采样，再清除Custom Encoder回调，
+		// 防止后续模式继续访问已经退出的驱动。
 		enc_as5600_deinit();
 		encoder_set_custom_callbacks(NULL, NULL, NULL);
 	}

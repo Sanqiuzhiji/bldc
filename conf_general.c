@@ -1410,13 +1410,15 @@ __attribute__((section(".text2"))) int conf_general_autodetect_apply_sensors_foc
 		*result = 1;
 	}
 
-	// Custom encoder
+	// 尝试检测Custom Encoder模式下的AS5600。双电机硬件不执行这段自动检测。
 #ifndef HW_HAS_DUAL_MOTORS
 	if (!res) {
+		// 临时切换传感器端口模式，使encoder_init初始化AS5600及其采样线程。
 		mcconf->m_sensor_port_mode = SENSOR_PORT_MODE_CUSTOM_ENCODER;
 		mc_interface_set_configuration(mcconf);
 
 		if (encoder_is_configured()) {
+			// 在1秒内将锁定电流从0缓慢增加到检测电流，使转子稳定在0度电角度。
 			for (int i = 0;i < 1000;i++) {
 				mc_interface_lock_override_once();
 				mc_interface_set_openloop_phase((float)i * current / 1000.0, 0.0);
@@ -1434,10 +1436,13 @@ __attribute__((section(".text2"))) int conf_general_autodetect_apply_sensors_foc
 				chThdSleepMilliseconds(1);
 			}
 
+			// 记录开环电角度扫描开始、中点和结束时的机械编码器角度，
+			// 用于判断编码器是否确实跟随电机转动。
 			float phase_start = encoder_read_deg();
 			float phase_mid = 0.0;
 			float phase_end = 0.0;
 
+			// 将开环电角度从0度扫描到179度，每步等待5 ms让转子跟随磁场。
 			for (int i = 0;i < 180.0;i++) {
 				mc_interface_lock_override_once();
 				mc_interface_set_openloop_phase(current, i);
@@ -1461,13 +1466,18 @@ __attribute__((section(".text2"))) int conf_general_autodetect_apply_sensors_foc
 			}
 
 			phase_end = encoder_read_deg();
+			// diff表示整个扫描过程的机械角度变化，diff_mid表示后半程的变化。
+			// 角度差函数负责处理机械角度跨越0/360度的情况。
 			float diff = fabsf(utils_angle_difference(phase_start, phase_end));
 			float diff_mid = fabsf(utils_angle_difference(phase_mid, phase_end));
 
+			// 检测到足够且趋势合理的角度变化后，继续测量编码器偏移、
+			// 机械角度与电角度的比例以及旋转方向。
 			if (diff > 2.0 && (diff_mid - diff / 2.0) < (diff / 4)) {
 				float offset, ratio;
 				bool inverted;
 				mcpwm_foc_encoder_detect(current, false, &offset, &ratio, &inverted);
+				// 将检测结果写入最终要恢复、保存并发送给VESC Tool的电机配置。
 				mcconf_old->m_sensor_port_mode = SENSOR_PORT_MODE_CUSTOM_ENCODER;
 				mcconf_old->foc_sensor_mode = FOC_SENSOR_MODE_ENCODER;
 				mcconf_old->foc_encoder_offset = offset;
