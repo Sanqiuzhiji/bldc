@@ -1043,7 +1043,7 @@ static void terminal_encoder(int argc, const char **argv) {
 
 	case SENSOR_PORT_MODE_CUSTOM_ENCODER:
 		if (m_enc_custom_print_info) {
-			commands_printf("%s", m_enc_custom_print_info);
+			commands_printf("%s", m_enc_custom_print_info());
 		}
 		break;
 

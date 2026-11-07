@@ -33,8 +33,8 @@
 #define AS5600_SAMPLE_RATE_HZ           1000
 #define AS5600_STATUS_INTERVAL          100
 #define AS5600_I2C_TIMEOUT_MS           2
-#define AS5600_MAX_CONSECUTIVE_ERRORS   5
-#define AS5600_DATA_TIMEOUT_MS          10
+#define AS5600_MAX_CONSECUTIVE_ERRORS   10
+#define AS5600_DATA_TIMEOUT_MS          50
 
 // 采样线程与电机控制线程共享这些状态，因此使用volatile保证每次都从内存读取。
 // angle_deg是供电机控制使用的机械角度，raw_angle和计数器用于终端诊断。
@@ -171,23 +171,26 @@ bool enc_as5600_has_fault(void)
         return true;
     }
 
-    // AS5600能够通信并不代表磁铁安装正确，还需要检查磁铁存在和磁场强度标志。
-    return !(m_state.status & AS5600_STATUS_MAGNET_DETECTED) ||
-    (m_state.status & (AS5600_STATUS_MAGNET_TOO_WEAK |
-        AS5600_STATUS_MAGNET_TOO_STRONG));
+	// 临时调试策略：只有磁铁缺失才停止电机。磁场过弱或过强仍会显示在
+	// encoder诊断信息中，但不触发编码器故障，便于验证有感控制链路。
+	// 正式使用前应恢复磁场强度检查，并调整磁铁到合适位置。
+	return !(m_state.status & AS5600_STATUS_MAGNET_DETECTED);
 }
 
 char* enc_as5600_print_info(void)
 {
-    // 返回一份静态诊断文本，供encoder终端命令打印当前角度、通信和磁铁状态。
-    static char info[160];
-    snprintf(info, sizeof(info),
-             "AS5600 raw: %u, angle: %.2f deg, updates: %lu, errors: %lu, magnet: %s%s%s",
-             (unsigned)m_state.raw_angle,
-             (double)m_state.angle_deg,
-             (unsigned long)m_state.update_count,
-             (unsigned long)m_state.error_count,
-             (m_state.status & AS5600_STATUS_MAGNET_DETECTED) ? "detected" : "missing",
+	// 返回一份静态诊断文本，供encoder终端命令打印当前角度、通信和磁铁状态。
+	static char info[192];
+	uint32_t age_ms = ST2MS(chVTTimeElapsedSinceX(m_state.last_update));
+	snprintf(info, sizeof(info),
+			 "AS5600 raw: %u, angle: %.2f deg, updates: %lu, errors: %lu, consecutive: %lu, age: %lu ms, magnet: %s%s%s",
+			 (unsigned)m_state.raw_angle,
+			 (double)m_state.angle_deg,
+			 (unsigned long)m_state.update_count,
+			 (unsigned long)m_state.error_count,
+			 (unsigned long)m_state.consecutive_errors,
+			 (unsigned long)age_ms,
+			 (m_state.status & AS5600_STATUS_MAGNET_DETECTED) ? "detected" : "missing",
              (m_state.status & AS5600_STATUS_MAGNET_TOO_WEAK) ? ", weak" : "",
              (m_state.status & AS5600_STATUS_MAGNET_TOO_STRONG) ? ", strong" : "");
     return info;

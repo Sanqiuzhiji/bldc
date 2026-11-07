@@ -1474,18 +1474,24 @@ __attribute__((section(".text2"))) int conf_general_autodetect_apply_sensors_foc
 			// 检测到足够且趋势合理的角度变化后，继续测量编码器偏移、
 			// 机械角度与电角度的比例以及旋转方向。
 			if (diff > 2.0 && (diff_mid - diff / 2.0) < (diff / 4)) {
-				float offset, ratio;
-				bool inverted;
-				mcpwm_foc_encoder_detect(current, false, &offset, &ratio, &inverted);
-				// 将检测结果写入最终要恢复、保存并发送给VESC Tool的电机配置。
-				mcconf_old->m_sensor_port_mode = SENSOR_PORT_MODE_CUSTOM_ENCODER;
-				mcconf_old->foc_sensor_mode = FOC_SENSOR_MODE_ENCODER;
-				mcconf_old->foc_encoder_offset = offset;
-				mcconf_old->foc_encoder_ratio = ratio;
-				mcconf_old->foc_encoder_inverted = inverted;
+				float offset = 0.0;
+				float ratio = 0.0;
+				bool inverted = false;
+				fault = mcpwm_foc_encoder_detect(current, false, &offset, &ratio, &inverted);
 
-				res = true;
-				*result = 2;
+				// 只有检测完整结束且结果有效时才报告成功，避免将未初始化或
+				// 非法的校准参数保存为有感配置。
+				if (fault == FAULT_CODE_NONE &&
+						isfinite(offset) && isfinite(ratio) && ratio >= 1.0f) {
+					mcconf_old->m_sensor_port_mode = SENSOR_PORT_MODE_CUSTOM_ENCODER;
+					mcconf_old->foc_sensor_mode = FOC_SENSOR_MODE_ENCODER;
+					mcconf_old->foc_encoder_offset = offset;
+					mcconf_old->foc_encoder_ratio = ratio;
+					mcconf_old->foc_encoder_inverted = inverted;
+
+					res = true;
+					*result = 2;
+				}
 			}
 		}
 	}
